@@ -169,7 +169,6 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=10,pe
 
     thresholded_img=(raw_img>threshold).astype(np.uint8)
     if np.max(thresholded_img)==0:      #if no pixel above threshold, means not welding 
-        print('no hotspot detected')
         return None, None
 
 
