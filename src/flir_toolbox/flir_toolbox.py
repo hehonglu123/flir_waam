@@ -165,11 +165,7 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=10,pe
 
     ###adaptively increase the threshold to 60% of the maximum pixel value
     threshold=max(threshold,percentage_threshold*np.max(raw_img))
-
-
     thresholded_img=(raw_img>threshold).astype(np.uint8)
-    if np.max(thresholded_img)==0:      #if no pixel above threshold, means not welding 
-        return None, None
 
 
     nb_components, labels, stats, centroids = cv2.connectedComponentsWithStats(thresholded_img, connectivity=4)
@@ -179,7 +175,7 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=10,pe
 
     if np.max(areas)<area_threshold:    #if no hot spot larger than area_threshold, return None
         print('hotspot too small')
-        return None, None
+        return None, None, None, None
     
     # Find the index of the component with the largest area
     largest_component_index = np.argmax(areas)
@@ -189,7 +185,7 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=10,pe
     torch_centroid, torch_bbox=torch_detect_yolo(raw_img,yolo_model)
     if torch_centroid is None:   #if no torch detected, return None
         print('torch not found')
-        return None, None
+        return None, None, None, None
     template_bottom_center=torch_bbox[:2]+np.array([torch_bbox[2]/2,torch_bbox[3]])
     hull = cv2.convexHull(pixel_coordinates)
 
@@ -326,3 +322,18 @@ def get_pixel_value(ir_image,coord,window_size):
     mask = (window > 3*pixel_avg/4) # filter out background 
     pixel_avg = np.mean(window[mask])
     return pixel_avg
+
+def line_intersect(p1,v1,p2,v2):
+    #calculate the intersection of two lines, on line 1
+    #find the closest point on line1 to line2
+    w = p1 - p2
+    a = np.dot(v1, v1)
+    b = np.dot(v1, v2)
+    c = np.dot(v2, v2)
+    d = np.dot(v1, w)
+    e = np.dot(v2, w)
+
+    sc = (b*e - c*d) / (a*c - b*b)
+    closest_point = p1 + sc * v1
+
+    return closest_point
