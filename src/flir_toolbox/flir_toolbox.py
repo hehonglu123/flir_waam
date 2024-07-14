@@ -158,7 +158,7 @@ def flame_detection_no_arc(raw_img,torch_template,threshold=1.5e4,area_threshold
 
 
 
-def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=10,percentage_threshold=0.6):
+def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,percentage_threshold=0.6):
     ###welding point detection without flame
     #centroids: [x,y], top pixel coordinate of the weldpool (intersection between wire and piece)
     #bbox: x,y,w,h
@@ -196,7 +196,8 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=10,pe
     downward_line = LineString([point, (template_bottom_center[0], 320)])
     # Find the intersection between the line and the polygon's hull
     intersection = poly.exterior.intersection(downward_line)
-    if not intersection.is_empty:
+
+    if not intersection.is_empty and not isinstance(intersection, LineString):
         if intersection.geom_type == 'MultiPoint':
             # Convert MultiPoint to a list of points and find the one with the lowest y-value
             weld_pool = min(intersection.geoms, key=lambda p: p.y)
