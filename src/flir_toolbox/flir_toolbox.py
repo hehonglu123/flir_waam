@@ -69,96 +69,36 @@ def counts2temp_4learning(data_counts,R,B,F,J1,J0):
     return data_temp
 
 
-def flame_detection(raw_img,threshold=1.2e4,area_threshold=10):
+def weld_detection_aluminum(raw_img,yolo_model,threshold=1.0e4,area_threshold=4,percentage_threshold=0.8):
     ###flame detection by raw counts thresholding and connected components labeling
     #centroids: x,y
     #bbox: x,y,w,h
+    ###adaptively increase the threshold to 60% of the maximum pixel value
+    threshold=max(threshold,percentage_threshold*np.max(raw_img))
     thresholded_img=(raw_img>threshold).astype(np.uint8)
-    if np.max(thresholded_img)==0:
-        return None, None
 
     nb_components, labels, stats, centroids = cv2.connectedComponentsWithStats(thresholded_img, connectivity=4)
-
+    
     valid_indices=np.where(stats[:, cv2.CC_STAT_AREA] > area_threshold)[0][1:]  ###threshold connected area
     if len(valid_indices)==0:
-        return None, None
+        return None, None, None, None
     
     average_pixel_values = [np.mean(raw_img[labels == label]) for label in valid_indices]   ###sorting
-
     valid_index=valid_indices[np.argmax(average_pixel_values)]      ###get the area with largest average brightness value
 
     # Extract the centroid and bounding box of the largest component
     centroid = centroids[valid_index]
     bbox = stats[valid_index, :-1]
 
-    return centroid, bbox
-
-
-def flame_detection_no_arc(raw_img,torch_template,threshold=1.5e4,area_threshold=10,template_center_offset=2):
-    ###welding point detection without flame
-    #centroids: x,y
-    #bbox: x,y,w,h
-
-    ###adaptively increase the threshold to 50% of the maximum pixel value
-    threshold=max(threshold,0.5*np.max(raw_img))
-
-
-    thresholded_img=(raw_img>threshold).astype(np.uint8)
-    if np.max(thresholded_img)==0:      #if no pixel above threshold, means not welding 
-        print('no hotspot detected')
-        return None, None
-
-
-    nb_components, labels, stats, centroids = cv2.connectedComponentsWithStats(thresholded_img, connectivity=4)
-    #find the largest connected area
-    areas = stats[:, 4]
-    areas[0] = 0    # Exclude the background component (label 0) from the search
-
-    if np.max(areas)<area_threshold:    #if no hot spot larger than area_threshold, return None
-        print('hotspot too small')
-        return None, None
+    ## Torch detection
+    torch_centroid, torch_bbox=torch_detect_yolo(raw_img,yolo_model)
+    if torch_centroid is None:   #if no torch detected, return None
+        return None, None, None, None
     
-    # Find the index of the component with the largest area
-    largest_component_index = np.argmax(areas)
-    pixel_coordinates = np.flip(np.array(np.where(labels == largest_component_index)).T,axis=1)
-
-    ## Torch template detection
-    template_upper_corner=torch_detect(raw_img,torch_template)
-    if template_upper_corner is None:   #if no torch detected, return None
-        print('torch not found')
-        return None, None
-    template_bottom_center=template_upper_corner+np.array([torch_template.shape[1]//2+template_center_offset,torch_template.shape[0]])
-    hull = cv2.convexHull(pixel_coordinates)
-
-    ##############################################display for debugging#########################################################
-    # ir_normalized = ((raw_img - np.min(raw_img)) / (np.max(raw_img) - np.min(raw_img))) * 255
-    # ir_normalized=np.clip(ir_normalized, 0, 255)
-    # # Convert the IR image to BGR format with the inferno colormap
-    # ir_bgr = cv2.applyColorMap(ir_normalized.astype(np.uint8), cv2.COLORMAP_INFERNO)
-    # cv2.rectangle(ir_bgr, template_upper_corner, (template_upper_corner[0] + torch_template.shape[1], template_upper_corner[1] + torch_template.shape[0]), (0,255,0), 2)
-    # #change convex hull vertices to green
-    # for i in range(len(hull)):
-    #     cv2.circle(ir_bgr, tuple(hull[i][0]), 1, (0,255,0), thickness=2)
-
-    # cv2.imshow('ir_bgr',ir_bgr)
-    # cv2.waitKey(0)
-    ##############################################display for debugging END#########################################################
-
-    poly = Polygon([tuple(point[0]) for point in hull])
-    point = Point(template_bottom_center[0],template_bottom_center[1])
-    # The points are returned in the same order as the input geometries:
-    weld_pool, p2 = nearest_points(poly, point)
-    centroid=np.array([weld_pool.x,weld_pool.y]).astype(int)
-
-    #create 5x5 bbox around the centroid
-    bbox=np.array([centroid[0]-2,centroid[1]-2,5,5])
+    return centroid, bbox, torch_centroid, torch_bbox
 
 
-    return centroid, bbox
-
-
-
-def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,percentage_threshold=0.6):
+def weld_detection_steel(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,percentage_threshold=0.6):
     ###welding point detection without flame
     #centroids: [x,y], top pixel coordinate of the weldpool (intersection between wire and piece)
     #bbox: x,y,w,h
@@ -174,7 +114,6 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,pe
     areas[0] = 0    # Exclude the background component (label 0) from the search
 
     if np.max(areas)<area_threshold:    #if no hot spot larger than area_threshold, return None
-        print('hotspot too small')
         return None, None, None, None
     
     # Find the index of the component with the largest area
@@ -184,7 +123,6 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,pe
     ## Torch detection
     torch_centroid, torch_bbox=torch_detect_yolo(raw_img,yolo_model)
     if torch_centroid is None:   #if no torch detected, return None
-        print('torch not found')
         return None, None, None, None
     template_bottom_center=torch_bbox[:2]+np.array([torch_bbox[2]/2,torch_bbox[3]])
     hull = cv2.convexHull(pixel_coordinates)
@@ -204,8 +142,8 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,pe
         else:
             weld_pool = intersection
     else:
-        ### find the closest point on the hull
-        weld_pool, _ = nearest_points(poly, point)
+        ### no intersection, find the closest point to the line
+        weld_pool, _ = nearest_points(poly.exterior, downward_line)
 
 
 
@@ -225,7 +163,7 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,pe
     # # Convert the IR image to BGR format with the inferno colormap
     # ir_bgr = cv2.applyColorMap(ir_normalized.astype(np.uint8), cv2.COLORMAP_INFERNO)
     # cv2.rectangle(ir_bgr, tuple(bbox[:2]), tuple(bbox[:2]+bbox[2:]), (0,255,0), 2)
-    # #change convex hull vertices to green
+    # #change convex hull vertices to blue
     # for i in range(len(hull)):
     #     cv2.circle(ir_bgr, tuple(hull[i][0]), 1, (255,0,0), thickness=2)
     # #make template bottom center red
@@ -239,36 +177,6 @@ def flame_detection_yolo(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,pe
 
     return centroid, bbox, torch_centroid, torch_bbox
 
-def weld_detection(raw_img,threshold=1.2e4,area_threshold=10):
-    ###flame detection by raw counts thresholding and connected components labeling
-    #centroids: x,y
-    #bbox: x,y,w,h
-    #pixels: row,col coordinates
-
-    threshold=max(threshold,np.max(raw_img)*0.9)
-    thresholded_img=(raw_img>threshold).astype(np.uint8)
-    if np.max(thresholded_img)==0:
-        # print('max counts below threshold: ',np.max(raw_img))
-        return None, None, None
-
-    nb_components, labels, stats, centroids = cv2.connectedComponentsWithStats(thresholded_img, connectivity=4)
-
-    valid_indices=np.where(stats[:, cv2.CC_STAT_AREA] > area_threshold)[0][1:]  ###threshold connected area
-    if len(valid_indices)==0:
-        # print('no connected components')
-        return None, None, None
-    
-    average_pixel_values = [np.mean(raw_img[labels == label]) for label in valid_indices]   ###sorting
-
-    valid_index=valid_indices[np.argmax(average_pixel_values)]      ###get the area with largest average brightness value
-
-    #list of pixel coordinates
-    pixels=np.where(labels==valid_index)
-    # Extract the centroid and bounding box of the largest component
-    centroid = centroids[valid_index]
-    bbox = stats[valid_index, :-1]
-
-    return centroid, bbox, pixels
 
 def torch_detect(ir_image,template,template_threshold=0.3,pixel_threshold=1e4):
     ###template matching for torch, return the upper left corner of the matched region
@@ -305,7 +213,7 @@ def torch_detect_yolo(ir_image,yolo_model,pixel_threshold=1e4):
     ir_torch_tracking = cv2.cvtColor(ir_torch_tracking_normalized, cv2.COLOR_GRAY2BGR)
 
     #run yolo
-    result= yolo_model.predict(ir_torch_tracking,verbose=False)[0]
+    result= yolo_model.predict(ir_torch_tracking,verbose=False, conf=0.5)[0]
     if result.boxes.cls.cpu().numpy()==0:
         bbox = result.boxes.cpu().xyxy[0].numpy()\
         #change bbox to opencv format
