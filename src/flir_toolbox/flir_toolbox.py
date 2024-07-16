@@ -137,8 +137,10 @@ def weld_detection_steel(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,pe
 
     if not intersection.is_empty and not isinstance(intersection, LineString):
         if intersection.geom_type == 'MultiPoint':
-            # Convert MultiPoint to a list of points and find the one with the lowest y-value
-            weld_pool = min(intersection.geoms, key=lambda p: p.y)
+            # get the average of the intersections
+            points_list = [point for point in intersection.geoms]
+            # Now you can iterate over points_list or perform operations that require iteration
+            weld_pool = Point(np.mean([p.x for p in points_list], dtype=int), np.mean([p.y for p in points_list], dtype=int))
         else:
             weld_pool = intersection
     else:
@@ -225,10 +227,10 @@ def torch_detect_yolo(ir_image,yolo_model,pixel_threshold=1e4):
         return None, None
 
 def get_pixel_value(ir_image,coord,window_size):
-    ###get top 1/4 average pixel value within the window
+    ###get pixel value larger than avg within the window
     window = ir_image[coord[1]-window_size//2:coord[1]+window_size//2+1,coord[0]-window_size//2:coord[0]+window_size//2+1]
     pixel_avg = np.mean(window)
-    mask = (window > 3*pixel_avg/4) # filter out background 
+    mask = (window > pixel_avg) # filter out background 
     pixel_avg = np.mean(window[mask])
     return pixel_avg
 
