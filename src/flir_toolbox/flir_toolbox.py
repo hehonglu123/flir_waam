@@ -207,8 +207,9 @@ def torch_detect(ir_image,template,template_threshold=0.3,pixel_threshold=1e4):
     
     return max_loc
 
-def torch_detect_yolo(ir_image,yolo_model,pixel_threshold=1e4):
+def torch_detect_yolo(ir_image,yolo_model,pixel_threshold=1e4,percentage_threshold=0.5):
     ir_torch_tracking=copy.deepcopy(ir_image)
+    pixel_threshold = max(pixel_threshold, percentage_threshold*np.max(ir_torch_tracking))
     ir_torch_tracking[ir_torch_tracking>pixel_threshold]=pixel_threshold
     ir_torch_tracking_normalized = ((ir_torch_tracking - np.min(ir_torch_tracking)) / (np.max(ir_torch_tracking) - np.min(ir_torch_tracking))) * 255
     ir_torch_tracking_normalized = ir_torch_tracking_normalized.astype(np.uint8)
