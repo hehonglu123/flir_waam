@@ -179,6 +179,15 @@ def weld_detection_steel(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,pe
 
     return centroid, bbox, torch_centroid, torch_bbox
 
+def weld_detection_steel(raw_img,torch_model,tip_model):
+
+    ## Torch detection
+    torch_centroid, torch_bbox=torch_detect_yolo(raw_img,torch_model)
+    ## Tip detection
+    tip_centroid, tip_bbox=tip_wire_detect_yolo(raw_img,tip_model)
+
+    return tip_centroid, tip_bbox, torch_centroid, torch_bbox
+
 
 def torch_detect(ir_image,template,template_threshold=0.3,pixel_threshold=1e4):
     ###template matching for torch, return the upper left corner of the matched region
@@ -217,6 +226,25 @@ def torch_detect_yolo(ir_image,yolo_model,pixel_threshold=1e4,percentage_thresho
 
     #run yolo
     result= yolo_model.predict(ir_torch_tracking,verbose=False, conf=0.5)[0]
+    conf_all = result.boxes.conf.cpu().numpy()  #find the most confident torch prediction
+    if len(conf_all)>0:
+        max_conf_idx=np.argmax(conf_all)
+        bbox = result.boxes.cpu().xyxy[max_conf_idx].numpy()\
+        #change bbox to opencv format
+        bbox[2]=bbox[2]-bbox[0]
+        bbox[3]=bbox[3]-bbox[1]
+        centroid = np.array([(bbox[0]+bbox[2])/2,(bbox[1]+bbox[3])/2])
+        return centroid, bbox.astype(int)
+    else:
+        return None, None
+    
+def tip_detect_yolo(ir_image,tip_model):
+    ir_tip_tracking=copy.deepcopy(ir_image)
+    ir_tip_tracking = ((ir_tip_tracking - np.min(ir_tip_tracking)) / (np.max(ir_tip_tracking) - np.min(ir_tip_tracking))) * 255
+    ir_tip_tracking = ir_tip_tracking.astype(np.uint8)
+    ir_tip_tracking = cv2.cvtColor(ir_tip_tracking, cv2.COLOR_GRAY2BGR)
+    #run yolo
+    result= tip_model.predict(ir_tip_tracking,verbose=False)[0]
     if result.boxes.cls.cpu().numpy()==0:
         bbox = result.boxes.cpu().xyxy[0].numpy()\
         #change bbox to opencv format
@@ -226,6 +254,33 @@ def torch_detect_yolo(ir_image,yolo_model,pixel_threshold=1e4,percentage_thresho
         return centroid, bbox.astype(int)
     else:
         return None, None
+
+def tip_wire_detect_yolo(ir_image,tip_wire_model):
+    ir_tip_wire_tracking=copy.deepcopy(ir_image)
+    pixel_threshold=0.77*np.max(ir_tip_wire_tracking)
+    ir_tip_wire_tracking[ir_tip_wire_tracking>pixel_threshold]=pixel_threshold
+    ir_tip_wire_tracking = ((ir_tip_wire_tracking - np.min(ir_tip_wire_tracking)) / (np.max(ir_tip_wire_tracking) - np.min(ir_tip_wire_tracking))) * 255
+    ir_tip_wire_tracking = ir_tip_wire_tracking.astype(np.uint8)
+    ir_tip_wire_tracking = cv2.cvtColor(ir_tip_wire_tracking, cv2.COLOR_GRAY2BGR)
+    #run yolo
+    result= tip_wire_model.predict(ir_tip_wire_tracking,verbose=False,conf=0.5)[0]
+    cls_list = result.boxes.cls.cpu().numpy().astype(int)
+    counts = np.bincount(cls_list)
+    # Check if there is exactly one 0 and one 1
+    if len(counts) >= 2 and counts[0] == 1 and counts[1] == 1:
+        idx0=np.where(cls_list==0)[0][0]
+        idx1=np.where(cls_list==1)[0][0]
+        #get the lower right corner of the bounding box of cls 0
+        x0_left,y0_left,x1_left,y1_left = result.boxes.cpu().xyxy[idx0].numpy()
+        #get the lower left corner of the bounding box of cls 1
+        x0_right,y0_right,x1_right,y1_right = result.boxes.cpu().xyxy[idx1].numpy()
+        #get the average of the two points
+        centroid_x = (x1_left+x0_right)/2
+        centroid_y = (y1_left+y1_right)/2
+        
+        return np.array([centroid_x,centroid_y]), (int(centroid_x - 1.5), int(centroid_y - 1.5), 3, 3)
+
+    return None, None
 
 def get_pixel_value(ir_image,coord,window_size):
     ###get pixel value larger than avg within the window

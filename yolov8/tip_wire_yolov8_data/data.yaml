@@ -1,0 +1,6 @@
+train: train/images
+val: train/images
+ch: 1
+grey: True
+nc: 2
+names: ['tip_wire_left', 'tip_wire_right']
