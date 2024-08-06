@@ -98,86 +98,86 @@ def weld_detection_aluminum(raw_img,yolo_model,threshold=1.0e4,area_threshold=4,
     return centroid, bbox, torch_centroid, torch_bbox
 
 
-def weld_detection_steel(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,percentage_threshold=0.6):
-    ###welding point detection without flame
-    #centroids: [x,y], top pixel coordinate of the weldpool (intersection between wire and piece)
-    #bbox: x,y,w,h
+# def weld_detection_steel(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,percentage_threshold=0.6):
+#     ###welding point detection without flame
+#     #centroids: [x,y], top pixel coordinate of the weldpool (intersection between wire and piece)
+#     #bbox: x,y,w,h
 
-    ###adaptively increase the threshold to 60% of the maximum pixel value
-    threshold=max(threshold,percentage_threshold*np.max(raw_img))
-    thresholded_img=(raw_img>threshold).astype(np.uint8)
+#     ###adaptively increase the threshold to 60% of the maximum pixel value
+#     threshold=max(threshold,percentage_threshold*np.max(raw_img))
+#     thresholded_img=(raw_img>threshold).astype(np.uint8)
 
 
-    nb_components, labels, stats, centroids = cv2.connectedComponentsWithStats(thresholded_img, connectivity=4)
-    #find the largest connected area
-    areas = stats[:, 4]
-    areas[0] = 0    # Exclude the background component (label 0) from the search
+#     nb_components, labels, stats, centroids = cv2.connectedComponentsWithStats(thresholded_img, connectivity=4)
+#     #find the largest connected area
+#     areas = stats[:, 4]
+#     areas[0] = 0    # Exclude the background component (label 0) from the search
 
-    if np.max(areas)<area_threshold:    #if no hot spot larger than area_threshold, return None
-        return None, None, None, None
+#     if np.max(areas)<area_threshold:    #if no hot spot larger than area_threshold, return None
+#         return None, None, None, None
     
-    # Find the index of the component with the largest area
-    largest_component_index = np.argmax(areas)
-    pixel_coordinates = np.flip(np.array(np.where(labels == largest_component_index)).T,axis=1)
+#     # Find the index of the component with the largest area
+#     largest_component_index = np.argmax(areas)
+#     pixel_coordinates = np.flip(np.array(np.where(labels == largest_component_index)).T,axis=1)
 
-    ## Torch detection
-    torch_centroid, torch_bbox=torch_detect_yolo(raw_img,yolo_model)
-    if torch_centroid is None:   #if no torch detected, return None
-        return None, None, None, None
-    template_bottom_center=torch_bbox[:2]+np.array([torch_bbox[2]/2,torch_bbox[3]])
-    hull = cv2.convexHull(pixel_coordinates)
+#     ## Torch detection
+#     torch_centroid, torch_bbox=torch_detect_yolo(raw_img,yolo_model)
+#     if torch_centroid is None:   #if no torch detected, return None
+#         return None, None, None, None
+#     template_bottom_center=torch_bbox[:2]+np.array([torch_bbox[2]/2,torch_bbox[3]])
+#     hull = cv2.convexHull(pixel_coordinates)
 
-    poly = Polygon([tuple(point[0]) for point in hull])
-    point = Point(template_bottom_center[0],template_bottom_center[1])
+#     poly = Polygon([tuple(point[0]) for point in hull])
+#     point = Point(template_bottom_center[0],template_bottom_center[1])
     
-    ###find the intersection between the line and the hull
-    downward_line = LineString([point, (template_bottom_center[0], 320)])
-    # Find the intersection between the line and the polygon's hull
-    intersection = poly.exterior.intersection(downward_line)
+#     ###find the intersection between the line and the hull
+#     downward_line = LineString([point, (template_bottom_center[0], 320)])
+#     # Find the intersection between the line and the polygon's hull
+#     intersection = poly.exterior.intersection(downward_line)
 
-    if not intersection.is_empty and not isinstance(intersection, LineString):
-        if intersection.geom_type == 'MultiPoint':
-            # get the average of the intersections
-            points_list = [point for point in intersection.geoms]
-            # Now you can iterate over points_list or perform operations that require iteration
-            weld_pool = Point(np.mean([p.x for p in points_list], dtype=int), np.mean([p.y for p in points_list], dtype=int))
-        else:
-            weld_pool = intersection
-    else:
-        ### no intersection, find the closest point to the line
-        weld_pool, _ = nearest_points(poly.exterior, downward_line)
+#     if not intersection.is_empty and not isinstance(intersection, LineString):
+#         if intersection.geom_type == 'MultiPoint':
+#             # get the average of the intersections
+#             points_list = [point for point in intersection.geoms]
+#             # Now you can iterate over points_list or perform operations that require iteration
+#             weld_pool = Point(np.mean([p.x for p in points_list], dtype=int), np.mean([p.y for p in points_list], dtype=int))
+#         else:
+#             weld_pool = intersection
+#     else:
+#         ### no intersection, find the closest point to the line
+#         weld_pool, _ = nearest_points(poly.exterior, downward_line)
 
 
 
-    centroid=np.array([weld_pool.x,weld_pool.y]).astype(int)
-    #create 5x5 bbox around the centroid
-    bbox=np.array([centroid[0]-2,centroid[1]-2,5,5])
+#     centroid=np.array([weld_pool.x,weld_pool.y]).astype(int)
+#     #create 5x5 bbox around the centroid
+#     bbox=np.array([centroid[0]-2,centroid[1]-2,5,5])
     
 
-    # ##############################################display for debugging#########################################################
-    # #plot out the convex hull and the template bottom center
-    # # plt.plot(*poly.exterior.xy)
-    # # plt.scatter(*point.xy, c='r')
-    # # plt.plot(*downward_line.xy)
-    # # plt.show()
-    # ir_normalized = ((raw_img - np.min(raw_img)) / (np.max(raw_img) - np.min(raw_img))) * 255
-    # ir_normalized=np.clip(ir_normalized, 0, 255)
-    # # Convert the IR image to BGR format with the inferno colormap
-    # ir_bgr = cv2.applyColorMap(ir_normalized.astype(np.uint8), cv2.COLORMAP_INFERNO)
-    # cv2.rectangle(ir_bgr, tuple(bbox[:2]), tuple(bbox[:2]+bbox[2:]), (0,255,0), 2)
-    # #change convex hull vertices to blue
-    # for i in range(len(hull)):
-    #     cv2.circle(ir_bgr, tuple(hull[i][0]), 1, (255,0,0), thickness=2)
-    # #make template bottom center red
-    # cv2.circle(ir_bgr, tuple(map(int, template_bottom_center)), 1, (0,0,255), thickness=2)
+#     # ##############################################display for debugging#########################################################
+#     # #plot out the convex hull and the template bottom center
+#     # # plt.plot(*poly.exterior.xy)
+#     # # plt.scatter(*point.xy, c='r')
+#     # # plt.plot(*downward_line.xy)
+#     # # plt.show()
+#     # ir_normalized = ((raw_img - np.min(raw_img)) / (np.max(raw_img) - np.min(raw_img))) * 255
+#     # ir_normalized=np.clip(ir_normalized, 0, 255)
+#     # # Convert the IR image to BGR format with the inferno colormap
+#     # ir_bgr = cv2.applyColorMap(ir_normalized.astype(np.uint8), cv2.COLORMAP_INFERNO)
+#     # cv2.rectangle(ir_bgr, tuple(bbox[:2]), tuple(bbox[:2]+bbox[2:]), (0,255,0), 2)
+#     # #change convex hull vertices to blue
+#     # for i in range(len(hull)):
+#     #     cv2.circle(ir_bgr, tuple(hull[i][0]), 1, (255,0,0), thickness=2)
+#     # #make template bottom center red
+#     # cv2.circle(ir_bgr, tuple(map(int, template_bottom_center)), 1, (0,0,255), thickness=2)
 
 
-    # cv2.imshow('ir_bgr',ir_bgr)
-    # cv2.waitKey(0)
-    # ##############################################display for debugging END#########################################################
+#     # cv2.imshow('ir_bgr',ir_bgr)
+#     # cv2.waitKey(0)
+#     # ##############################################display for debugging END#########################################################
 
 
-    return centroid, bbox, torch_centroid, torch_bbox
+#     return centroid, bbox, torch_centroid, torch_bbox
 
 def weld_detection_steel(raw_img,torch_model,tip_model):
 
@@ -229,11 +229,11 @@ def torch_detect_yolo(ir_image,yolo_model,pixel_threshold=1e4,percentage_thresho
     conf_all = result.boxes.conf.cpu().numpy()  #find the most confident torch prediction
     if len(conf_all)>0:
         max_conf_idx=np.argmax(conf_all)
-        bbox = result.boxes.cpu().xyxy[max_conf_idx].numpy()\
+        bbox = result.boxes.cpu().xyxy[max_conf_idx].numpy()
+        centroid = np.array([(bbox[0]+bbox[2])/2,(bbox[1]+bbox[3])/2])
         #change bbox to opencv format
         bbox[2]=bbox[2]-bbox[0]
         bbox[3]=bbox[3]-bbox[1]
-        centroid = np.array([(bbox[0]+bbox[2])/2,(bbox[1]+bbox[3])/2])
         return centroid, bbox.astype(int)
     else:
         return None, None
