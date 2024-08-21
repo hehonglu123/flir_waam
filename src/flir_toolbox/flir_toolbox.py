@@ -188,6 +188,15 @@ def weld_detection_steel(raw_img,torch_model,tip_model):
 
     return tip_centroid, tip_bbox, torch_centroid, torch_bbox
 
+def form_vector(c,r,flir_intrinsic,rotated=True):
+    #form a 3D vector from imaging sensor to pixel coordinate c,r
+	if rotated:
+		c_original=r
+		r_original=flir_intrinsic['height']-c
+		vector=np.array([(c_original-flir_intrinsic['c0'])/flir_intrinsic['fsx'],(r_original-flir_intrinsic['r0'])/flir_intrinsic['fsy'],1])
+	else:
+		vector=np.array([(c-flir_intrinsic['c0'])/flir_intrinsic['fsx'],(r-flir_intrinsic['r0'])/flir_intrinsic['fsy'],1])
+	return vector/np.linalg.norm(vector)
 
 def torch_detect(ir_image,template,template_threshold=0.3,pixel_threshold=1e4):
     ###template matching for torch, return the upper left corner of the matched region
@@ -290,17 +299,17 @@ def get_pixel_value(ir_image,coord,window_size):
     pixel_avg = np.mean(window[mask])
     return pixel_avg
 
-def line_intersect(p1,v1,p2,v2):
-    #calculate the intersection of two lines, on line 1
-    #find the closest point on line1 to line2
-    w = p1 - p2
-    a = np.dot(v1, v1)
-    b = np.dot(v1, v2)
-    c = np.dot(v2, v2)
-    d = np.dot(v1, w)
-    e = np.dot(v2, w)
+# def line_intersect(p1,v1,p2,v2):
+#     #calculate the intersection of two lines, on line 1
+#     #find the closest point on line1 to line2
+#     w = p1 - p2
+#     a = np.dot(v1, v1)
+#     b = np.dot(v1, v2)
+#     c = np.dot(v2, v2)
+#     d = np.dot(v1, w)
+#     e = np.dot(v2, w)
 
-    sc = (b*e - c*d) / (a*c - b*b)
-    closest_point = p1 + sc * v1
+#     sc = (b*e - c*d) / (a*c - b*b)
+#     closest_point = p1 + sc * v1
 
-    return closest_point
+#     return closest_point
