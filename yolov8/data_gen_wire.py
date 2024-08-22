@@ -14,18 +14,20 @@ data_dir='../../../recorded_data/'
 
 # data_sets=['ER316L/VPD10/tubespiral_70ipm_v7','ER316L/VPD10/tubespiral_150ipm_v15']
 # data_sets=['ER316L/VPD10/tubespiral_50ipm_v5']
-data_sets=['ER316L/VPD10/tubespiral_180ipm_v18']
+# data_sets=['ER316L/VPD10/tubespiral_180ipm_v18']
+# data_sets=['ER316L/streaming/wall2/bf_ol_v10_f100','ER316L/streaming/right_triangle/bf_ol_v10_f100']
+data_sets=['ER316L/streaming/right_triangle/bf_ol_v10_f100']
 
 output_dir='../../../recorded_data/yolov8/tip-wire/'
 
 num_images_per_set=10
-img_counts=130
+img_counts=160
 #radmonly select 10 images from each set
 for data_set in data_sets:
     with open(data_dir+data_set+'/ir_recording.pickle', 'rb') as file:
         ir_recording = pickle.load(file)
     #select random frames
-    idxs=np.random.choice(range(3000,len(ir_recording)), num_images_per_set, replace=False)
+    idxs=np.random.choice(range(1000,len(ir_recording)), num_images_per_set, replace=False)
     for idx in idxs:
         ir_torch_tracking=np.rot90(ir_recording[idx], k=-1)
         pixel_threshold=0.77*np.max(ir_torch_tracking)
