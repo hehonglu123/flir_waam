@@ -68,12 +68,9 @@ def counts2temp_4learning(data_counts,R,B,F,J1,J0):
     
     return data_temp
 
-
-def weld_detection_aluminum(raw_img,yolo_model,threshold=1.0e4,area_threshold=4,percentage_threshold=0.8):
+def flame_detection_aluminum(raw_img,threshold=1.0e4,area_threshold=4,percentage_threshold=0.8):
     ###flame detection by raw counts thresholding and connected components labeling
-    #centroids: x,y
-    #bbox: x,y,w,h
-    ###adaptively increase the threshold to 60% of the maximum pixel value
+    ###adaptively increase the threshold to % of the maximum pixel value
     threshold=max(threshold,percentage_threshold*np.max(raw_img))
     thresholded_img=(raw_img>threshold).astype(np.uint8)
 
@@ -81,7 +78,7 @@ def weld_detection_aluminum(raw_img,yolo_model,threshold=1.0e4,area_threshold=4,
     
     valid_indices=np.where(stats[:, cv2.CC_STAT_AREA] > area_threshold)[0][1:]  ###threshold connected area
     if len(valid_indices)==0:
-        return None, None, None, None
+        return None, None
     
     average_pixel_values = [np.mean(raw_img[labels == label]) for label in valid_indices]   ###sorting
     valid_index=valid_indices[np.argmax(average_pixel_values)]      ###get the area with largest average brightness value
@@ -90,12 +87,20 @@ def weld_detection_aluminum(raw_img,yolo_model,threshold=1.0e4,area_threshold=4,
     centroid = centroids[valid_index]
     bbox = stats[valid_index, :-1]
 
+    return centroid, bbox
+
+def weld_detection_aluminum(raw_img,yolo_model,threshold=1.0e4,area_threshold=4,percentage_threshold=0.8):
+    #centroids: x,y
+    #bbox: x,y,w,h
+    
+    flame_centroid, flame_bbox=flame_detection_aluminum(raw_img,threshold,area_threshold,percentage_threshold)
+
     ## Torch detection
     torch_centroid, torch_bbox=torch_detect_yolo(raw_img,yolo_model)
     if torch_centroid is None:   #if no torch detected, return None
         return None, None, None, None
     
-    return centroid, bbox, torch_centroid, torch_bbox
+    return flame_centroid, flame_bbox, torch_centroid, torch_bbox
 
 
 # def weld_detection_steel(raw_img,yolo_model,threshold=1.5e4,area_threshold=50,percentage_threshold=0.6):
